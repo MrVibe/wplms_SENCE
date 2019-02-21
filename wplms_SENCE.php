@@ -73,6 +73,43 @@ class WPLMS_SENCE{
 
     function report_SENCE_portal($user_login,$user){
 
+        $soapURL = "http://elearningtest.sence.cl/Webservice/SenceElearning.svc?wsdl";
+        $soapFunction = "RegistrarActividad";
+
+        $soapFunctionParameters = array(
+            'codigoSence' => 'xxxxxxxxxx', 
+            'rutAlumno' => 'xxxxxxxxx',
+            'claveAlumno' => 'xxxxxx', 
+            'rutOtec' => 'xxxxxxx', 
+            'claveOtec' => 'xxxxxxx', 
+            'estadoActividad' =>
+            '1'
+        );
+        $soapClient = new SoapClient($soapURL);
+
+        $soapResult = $soapClient->__soapCall($soapFunction, array($soapFunctionParameters));
+
+        $soapResult = obj2array($soapResult); echo "Resultado "; echo
+        $soapResult['RegistrarActividadResult']; if(is_array($soapResult) &&
+        isset($soapResult['RegistrarActividadResult'])) {
+        // Process result.
+        echo "<br>Resultado Exitoso";
+        } else {
+        // Unexpected result if(function_exists("debug_message"))
+        {
+        debug_message("Unexpected soapResult for {$soapFunction}: ".print_r($soapResult,
+        TRUE)) ; } } function obj2array($obj) {
+        $out = array(); foreach ($obj
+        as $key => $val) { switch(true)
+        { case is_object($val):
+        $out[$key] = obj2array($val); break;
+        case is_array($val):
+        $out[$key] = obj2array($val); break;
+        default:
+        $out[$key] = $val;
+        } }
+        return $out;
+        }
     }
 }
 
