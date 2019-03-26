@@ -24,15 +24,55 @@ class WPLMS_SENCE{
 
     private function __construct(){
         $this->settings = get_option('wplms_sence_settings');
-    	add_action('wp_login',array($this,'report_SENCE_portal'),10,2);
-    	add_action('wp_login',array($this,'record_start_time'),10,2);
-
+    	//add_action('wp_login',array($this,'report_SENCE_portal'),10,2);
+    	//add_action('wp_login',array($this,'record_start_time'),10,2);
+        add_action('wplms_before_start_course',array($this,'wplms_before_start_course_status'));
         add_action('template_redirect',array($this,'check_SENCE_user_session'));
-
     	add_action('wp_footer',array($this,'track_session_time'));
+        add_action('clear_auth_cookie',array($this, 'users_last_login'), 10);
+        
+
         //codigoSence for course id
         add_filter('wplms_course_metabox',array($this,'codigoSence_fileds'));
         add_filter('wplms_course_creation_tabs',array($this,'codigoSence_front_end'));
+    }
+
+    function users_last_login() {
+        $user_id = get_current_user_id();
+        delete_user_meta($user_id,'login_expiry');
+        //maybe:yes report to sence portal
+        if(!empty($_COOKIE['course'])){
+            $course_id = $_COOKIE['course'];
+            
+            $this->report_SENCE_portal($user_id,2,$course_id);
+        }
+    }
+
+
+    function wplms_before_start_course_status(){
+        $course_id = 0;
+        $course_id = $_POST['course_id'];
+        if(empty($course_id) && !empty($_COOKIE['course'])){
+            $course_id = $_COOKIE['course'];
+        }
+        if(!empty($course_id) &&  is_user_logged_in()){
+            $user_id = get_current_user_id();
+            $check_last_expiry = get_user_meta($user_id,'login_expiry',true);
+            if(!empty($check_last_expiry)){
+                if($check_last_expiry > time()){
+                    //do nothing
+                }else{
+                    //record the expiry start session on sence .
+                    $this->record_start_time($user_id);
+                    $this->report_SENCE_portal($user_id,1,$course_id);
+                }
+
+            }else{
+                //record the expiry start session on sence .
+                $this->record_start_time($user_id);
+                $this->report_SENCE_portal($user_id,1,$course_id);
+            }
+        }
     }
 
     function codigoSence_front_end($settings){
@@ -66,16 +106,16 @@ class WPLMS_SENCE{
     }
 
 
-    function record_start_time($user_login,$user){
+    function record_start_time($user_id){
 
     	//detect if current user is a SENCE user
 
     	//Set a user meta with the timestmap.
-        $sence_id = bp_get_profile_field_data(array('field'=>$this->settings['sence_id'],'user_id'=>$user->ID));
+        $sence_id = bp_get_profile_field_data(array('field'=>$this->settings['sence_id'],'user_id'=>$user_id));
      
         if(!empty($sence_id )){
-            $expiry = time()+2*3600 + 50*60;
-            update_user_meta($user->ID,'login_expiry',$expiry);
+            $expiry = time()+2*3600 + 30*60;
+            update_user_meta($user_id,'login_expiry',$expiry);
         }
     }
 
@@ -87,12 +127,21 @@ class WPLMS_SENCE{
             $sence_id = bp_get_profile_field_data(array('field'=>$this->settings['sence_id'],'user_id'=>$user_id));
             if(!empty($sence_id )){
                 $login_expiry = get_user_meta($user_id,'login_expiry',true);
-                if( time() >= $login_expiry ){
-                    wp_logout();
-                    //maybe report to sence portal
+                if(!empty($login_expiry)){
+                    if( time() >= $login_expiry ){
+                        delete_user_meta($user_id,'login_expiry');
+                        //maybe:yes report to sence portal
+                        if(!empty($_COOKIE['course'])){
+                            $course_id = $_COOKIE['course'];
+                            $this->report_SENCE_portal($user_id,2,$course_id);
+                        }
+                        
+                        wp_logout();
+                        
+                    }
                 }
-            }
-            
+                
+            } 
         }
     }
 
@@ -112,42 +161,90 @@ class WPLMS_SENCE{
                         },<?php echo $time; ?>*1000);
                     </script>
                     <?php
-                    //maybe report to sence portal
                 }
     			
     		}
     	}
     }
 
-    function report_SENCE_portal($user_login,$user){
-        $return = '';
-        $soapURL = "http://elearningtest.sence.cl/Webservice/SenceElearning.svc?wsdl";
-        $soapFunction = "RegistrarActividad";
-
-        $soapFunctionParameters = array(
-            'codigoSence' => 'xxxxxxxxxx',//required  -- course id
-            'rutAlumno' => 'xxxxxxxxx',//required sence id --  profile field of user
-            'claveAlumno' => 'xxxxxx', //required sence password -- profile field of user
-            'rutOtec' => 'xxxxxxx',//required sence company id --  batch meta
-            'claveOtec' => 'xxxxxxx',//required sence company password --  batch meta
-            'estadoActividad' =>'1'
-        );
-        $soapClient = new SoapClient($soapURL);
-
-        $soapResult = $soapClient->__soapCall($soapFunction, array($soapFunctionParameters));
-
-        $soapResult = $this->obj2array($soapResult); 
-        $return .= "Resultado "; $return .= $soapResult['RegistrarActividadResult']; 
-        if(is_array($soapResult) && isset($soapResult['RegistrarActividadResult'])) {
-            // Process result.
-            $return .= "<br>Resultado Exitoso";
-        } else {
-            // Unexpected result if(function_exists("debug_message"))
+    function report_SENCE_portal($user_id,$in_out,$course_id){
         
-            $return .= debug_message("Unexpected soapResult for {$soapFunction}: ".print_r($soapResult,TRUE)) ;  
+            //means login
+        $codigoSence = get_post_meta($course_id,'codigoSence',true);
+        //print_r($codigoSence);
+        $sence_id = bp_get_profile_field_data(array('field'=>$this->settings['sence_id'],'user_id'=>$user_id));
+        $sence_password = bp_get_profile_field_data(array('field'=>$this->settings['sence_password'],'user_id'=>$user_id));
+        //print_r($sence_id .'-----'.$sence_password);
+        if(!empty($codigoSence)){
+
+            if($in_out==1){
+                //means login
+                $return = '';
+                $soapURL = "http://elearningtest.sence.cl/Webservice/SenceElearning.svc?wsdl";
+                $soapFunction = "RegistrarActividad";
+
+                $soapFunctionParameters = array(
+                    'codigoSence' => $codigoSence,//required  -- course id
+                    'rutAlumno' => $sence_id,//required sence id --  profile field of user
+                    'claveAlumno' =>$sence_password, //required sence password -- profile field of user
+                    'rutOtec' => $this->settings['rutOtec'],//required sence company id --  option table setting
+                    'claveOtec' =>$this->settings['claveOtec'],//required sence company password --  option table setting
+                    'estadoActividad' =>$in_out
+                );
+                $soapClient = new SoapClient($soapURL);
+
+                $soapResult = $soapClient->__soapCall($soapFunction, array($soapFunctionParameters));
+
+                //print_r(  $soapResult);
+                $soapResult = $this->obj2array($soapResult); 
+                //print_r(  $soapResult);die();
+                //response: 123795074514011034-5-----12345678stdClass Object ( [RegistrarActividadResult] => 32 ) Array ( [RegistrarActividadResult] => 32 )
+
+                $return .= "Resultado "; $return .= $soapResult['RegistrarActividadResult']; 
+                if(is_array($soapResult) && isset($soapResult['RegistrarActividadResult'])) {
+                    // Process result.
+                    $return .= "<br>Resultado Exitoso";
+                } else {
+                    // Unexpected result if(function_exists("debug_message"))
+                
+                    $return .= debug_message("Unexpected soapResult for {$soapFunction}: ".print_r($soapResult,TRUE)) ;  
+                }
+            }
+
+            if($in_out==2){
+
+                //means logout
+                $return = '';
+                $soapURL = "http://elearningtest.sence.cl/Webservice/SenceElearning.svc?wsdl";
+                $soapFunction = "RegistrarActividad";
+
+                $soapFunctionParameters = array(
+                    'codigoSence' => $codigoSence,//required  -- course id
+                    'rutAlumno' => $sence_id,//required sence id --  profile field of user
+                    'claveAlumno' =>$sence_password, //required sence password -- profile field of user
+                    'rutOtec' => $this->settings['rutOtec'],//required sence company id --  option table setting
+                    'claveOtec' =>$this->settings['claveOtec'],//required sence company password --  option table setting
+                    'estadoActividad' =>$in_out
+                );
+                $soapClient = new SoapClient($soapURL);
+
+                $soapResult = $soapClient->__soapCall($soapFunction, array($soapFunctionParameters));
+                
+                $soapResult = $this->obj2array($soapResult); 
+                
+                $return .= "Resultado "; $return .= $soapResult['RegistrarActividadResult']; 
+                if(is_array($soapResult) && isset($soapResult['RegistrarActividadResult'])) {
+                    // Process result.
+                    $return .= "<br>Resultado Exitoso";
+                } else {
+                    // Unexpected result if(function_exists("debug_message"))
+                
+                    $return .= debug_message("Unexpected soapResult for {$soapFunction}: ".print_r($soapResult,TRUE)) ;  
+                }
+            }
+
         }
         return $return;
-
     }
 
     function obj2array($obj) {
