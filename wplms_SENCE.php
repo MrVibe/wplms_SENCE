@@ -44,7 +44,10 @@ class WPLMS_SENCE{
         if(!empty($_COOKIE['course'])){
             $course_id = $_COOKIE['course'];
             
-            $this->report_SENCE_portal($user_id,2,$course_id);
+            $return  = $this->report_SENCE_portal($user_id,2,$course_id);
+            add_action('wp_head',function () use ($return) {
+                echo '<div class="message success" style="width:100%;"><p>'.$return.'</p></div>';
+            });
         }
     }
 
@@ -64,13 +67,19 @@ class WPLMS_SENCE{
                 }else{
                     //record the expiry start session on sence .
                     $this->record_start_time($user_id);
-                    $this->report_SENCE_portal($user_id,1,$course_id);
+                    $return = $this->report_SENCE_portal($user_id,1,$course_id);
+                    add_action('wp_head',function () use ($return) {
+                        echo '<div class="message success" style="width:100%;"><p>'.$return.'</p></div>';
+                    });
                 }
 
             }else{
                 //record the expiry start session on sence .
                 $this->record_start_time($user_id);
-                $this->report_SENCE_portal($user_id,1,$course_id);
+                $return =  $this->report_SENCE_portal($user_id,1,$course_id);
+                add_action('wp_head',function () use ($return) {
+                    echo '<div class="message success" style="width:100%;"><p>'.$return.'</p></div>';
+                });
             }
         }
     }
@@ -133,7 +142,10 @@ class WPLMS_SENCE{
                         //maybe:yes report to sence portal
                         if(!empty($_COOKIE['course'])){
                             $course_id = $_COOKIE['course'];
-                            $this->report_SENCE_portal($user_id,2,$course_id);
+                            $return = $this->report_SENCE_portal($user_id,2,$course_id);
+                            add_action('wp_head',function () use ($return) {
+                                echo '<div class="message success" style="width:100%;"><p>'.$return.'</p></div>';
+                            });
                         }
                         
                         wp_logout();
